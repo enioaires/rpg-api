@@ -1,3 +1,5 @@
+// src/index.ts - Entry point da API com characters routes
+
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { db } from './db'
@@ -8,6 +10,7 @@ import { requestLogger, errorHandler, validateJSON } from './middleware'
 import { responses } from './lib/responses'
 import testRoutes from './routes/test'
 import authRoutes from './routes/auth'
+import charactersRoutes from './routes/characters' // Nova linha
 
 // Valida configurações na inicialização
 validateConfig()
@@ -23,13 +26,27 @@ app.use('*', validateJSON)
 // Routes
 app.route('/test', testRoutes)
 app.route('/auth', authRoutes)
+app.route('/characters', charactersRoutes) // Nova linha
 
 app.get('/', (c) => {
   logger.info('Root endpoint accessed')
   return c.json({
     message: 'RPG API funcionando!',
     version: '1.0.0',
-    env: config.server.env
+    env: config.server.env,
+    endpoints: [
+      'GET /health - Health check',
+      'GET /test-db - Teste do banco',
+      'POST /auth/register - Criar conta',
+      'POST /auth/login - Fazer login',
+      'GET /auth/me - Dados do usuário (auth)',
+      'GET /characters - Listar personagens (auth)',
+      'POST /characters - Criar personagem (auth)',
+      'GET /characters/:id - Buscar personagem bruto (auth)',
+      'GET /characters/:id/calculated - Buscar personagem calculado (auth)',
+      'PUT /characters/:id - Atualizar personagem (auth)',
+      'DELETE /characters/:id - Deletar personagem (auth)'
+    ]
   })
 })
 
@@ -37,11 +54,18 @@ app.get('/health', (c) => {
   return responses.success(c, {
     status: 'healthy',
     uptime: process.uptime(),
-    memory: process.memoryUsage()
+    memory: process.memoryUsage(),
+    features: [
+      'Autenticação JWT',
+      'CRUD de Personagens RPG',
+      'Cálculos de Atributos',
+      'Validação Zod',
+      'Logs Estruturados'
+    ]
   }, 'API funcionando perfeitamente!')
 })
 
-// Novo endpoint para testar o banco
+// Endpoint para testar o banco
 app.get('/test-db', async (c) => {
   try {
     logger.debug('Testing database connection')
