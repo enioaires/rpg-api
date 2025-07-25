@@ -32,9 +32,13 @@ export const errorHandler = async (c: Context, next: Next) => {
   }
 };
 
-// Middleware para validar JSON
+// Middleware para validar JSON (apenas em métodos que podem ter body)
 export const validateJSON = async (c: Context, next: Next) => {
-  if (c.req.header('content-type')?.includes('application/json')) {
+  const method = c.req.method;
+  const hasBody = ['POST', 'PUT', 'PATCH'].includes(method);
+
+  // Só valida JSON se o método pode ter body E tem content-type JSON
+  if (hasBody && c.req.header('content-type')?.includes('application/json')) {
     try {
       await c.req.json();
     } catch (error) {
@@ -42,5 +46,6 @@ export const validateJSON = async (c: Context, next: Next) => {
       return c.json({ error: 'Invalid JSON format' }, 400);
     }
   }
+
   await next();
 };
