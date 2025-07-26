@@ -1,3 +1,4 @@
+// src/routes/characters.ts - CORREÇÕES SISTÊMICAS
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
@@ -64,128 +65,52 @@ charactersRoutes.get('/:id', validateParam(z.object({
       return responses.notFound(c, 'Personagem');
     }
 
-    logger.info('Character retrieved', { userId, characterId: id });
+    logger.info('Character retrieved', { userId, characterId: id, name: character[0]?.name });
 
     return responses.success(c, { character: character[0] });
 
   } catch (error) {
     logger.error('Failed to get character', error);
-    return responses.error(c, 'Erro ao buscar personagem');
-  }
-});
-
-// ==========================================
-// POST /characters - Criar novo personagem
-// ==========================================
-charactersRoutes.post('/', validateJSON(CreateRPGCharacterSchema), async (c) => {
-  try {
-    const { userId } = c.get('user');
-    const { name, data } = c.req.valid('json');
-
-    logger.info('Creating character', { userId, characterName: name });
-
-    const newCharacters = await db.insert(characters).values({
-      userId,
-      name,
-      data: data as any
-    }).returning();
-
-    const newCharacter = newCharacters[0];
-    if (!newCharacter) {
-      return responses.error(c, 'Erro ao criar personagem');
-    }
-
-    logger.info('Character created', { userId, characterId: newCharacter.id });
-
-    return responses.created(c, { character: newCharacter }, 'Personagem criado!');
-
-  } catch (error) {
-    logger.error('Failed to create character', error);
     return responses.error(c, 'Erro interno do servidor');
   }
 });
 
 // ==========================================
-// PUT /characters/:id - Atualizar personagem
+// FUNÇÕES DE CÁLCULO CORRIGIDAS
 // ==========================================
-charactersRoutes.put('/:id',
-  validateParam(z.object({ id: z.string().regex(/^\d+$/).transform(Number) })),
-  validateJSON(UpdateRPGCharacterSchema),
-  async (c) => {
-    try {
-      const { userId } = c.get('user');
-      const { id } = c.req.valid('param');
-      const updateData = c.req.valid('json');
 
-      // Verifica se existe
-      const existing = await db.select()
-        .from(characters)
-        .where(and(eq(characters.id, id), eq(characters.userId, userId)))
-        .limit(1);
+// CORRIGIDO: XP necessário = próximo nível × 10
+function calculateNextLevelXp(nextLevel: number): number {
+  return nextLevel * 10;
+}
 
-      if (existing.length === 0) {
-        return responses.notFound(c, 'Personagem');
-      }
+// CORRIGIDO: Vitalidade é a SOMA de todos os níveis de ferimento
+function calculateVitalityLevels(raceBase: number, classBase: number, level: number) {
+  const baseVitality = raceBase + classBase;
+  const multiplier = level + 1;
 
-      // Atualiza
-      const updated = await db.update(characters)
-        .set({
-          ...(updateData.name && { name: updateData.name }),
-          ...(updateData.data && { data: updateData.data as any })
-        })
-        .where(and(eq(characters.id, id), eq(characters.userId, userId)))
-        .returning();
+  // Calcula cada nível individual
+  const notable = baseVitality * multiplier;
+  const injured = (baseVitality - 20) * multiplier;
+  const severelyInjured = (baseVitality - 40) * multiplier;
+  const condemned = (baseVitality - 60) * multiplier;
+  const incapacitated = (baseVitality - 80) * multiplier;
+  const coma = (baseVitality - 100) * multiplier;
 
-      logger.info('Character updated', { userId, characterId: id });
+  // SOMA TOTAL = soma de todos os níveis
+  const totalVitality = notable + injured + severelyInjured + condemned + incapacitated + coma;
 
-      return responses.success(c, { character: updated[0] }, 'Personagem atualizado!');
-
-    } catch (error) {
-      logger.error('Failed to update character', error);
-      return responses.error(c, 'Erro interno do servidor');
+  return {
+    total: totalVitality,
+    levels: {
+      notable,
+      injured,
+      severelyInjured,
+      condemned,
+      incapacitated,
+      coma
     }
-  }
-);
-
-// ==========================================
-// DELETE /characters/:id - Deletar personagem
-// ==========================================
-charactersRoutes.delete('/:id', validateParam(z.object({
-  id: z.string().regex(/^\d+$/).transform(Number)
-})), async (c) => {
-  try {
-    const { userId } = c.get('user');
-    const { id } = c.req.valid('param');
-
-    // Verifica se existe
-    const existing = await db.select()
-      .from(characters)
-      .where(and(eq(characters.id, id), eq(characters.userId, userId)))
-      .limit(1);
-
-    if (existing.length === 0) {
-      return responses.notFound(c, 'Personagem');
-    }
-
-    // Deleta
-    await db.delete(characters)
-      .where(and(eq(characters.id, id), eq(characters.userId, userId)));
-
-    logger.info('Character deleted', { userId, characterId: id });
-
-    return responses.success(c, {}, 'Personagem deletado!');
-
-  } catch (error) {
-    logger.error('Failed to delete character', error);
-    return responses.error(c, 'Erro interno do servidor');
-  }
-});
-
-// ==========================================
-// Funções de cálculo
-// ==========================================
-function calculateVitality(raceBase: number, classBase: number, level: number): number {
-  return (raceBase + classBase) * (level + 1);
+  };
 }
 
 function calculateBerkana(baseValue: number, level: number): number {
@@ -201,20 +126,8 @@ function calculateWeaponPercentage(basePercentage: number, level: number): numbe
   return Math.min(100, basePercentage + level); // Máximo 100%
 }
 
-function calculateVitalityLevels(totalVitality: number) {
-  const step = Math.floor(totalVitality / 6);
-  return {
-    notable: totalVitality,
-    injured: totalVitality - step,
-    severelyInjured: totalVitality - (step * 2),
-    condemned: totalVitality - (step * 3),
-    incapacitated: totalVitality - (step * 4),
-    coma: totalVitality - (step * 5)
-  };
-}
-
 // ==========================================
-// GET /characters/:id/calculated - Personagem com TODOS os cálculos
+// GET /characters/:id/calculated - Personagem com TODOS os cálculos CORRIGIDOS
 // ==========================================
 charactersRoutes.get('/:id/calculated', validateParam(z.object({
   id: z.string().regex(/^\d+$/).transform(Number)
@@ -256,7 +169,18 @@ charactersRoutes.get('/:id/calculated', validateParam(z.object({
       );
     });
 
-    // Monta resposta com TODOS os dados calculados
+    // CORRIGIDO: Cálculo correto da vitalidade
+    const vitalityCalculation = calculateVitalityLevels(
+      data.vitality.raceBase,
+      data.vitality.classBase,
+      level
+    );
+
+    // CORRIGIDO: XP para próximo nível
+    const nextLevel = level + 1;
+    const xpForNext = calculateNextLevelXp(nextLevel);
+
+    // Monta resposta com TODOS os dados calculados CORRIGIDOS
     const calculatedCharacter = {
       // Dados básicos do banco
       id: rawCharacter?.id,
@@ -268,19 +192,17 @@ charactersRoutes.get('/:id/calculated', validateParam(z.object({
       // Dados brutos originais
       data: data,
 
-      // TODOS OS CÁLCULOS
+      // TODOS OS CÁLCULOS CORRIGIDOS
       calculated: {
-        // Vitalidade
+        // Vitalidade CORRIGIDA
         vitality: {
-          total: calculateVitality(data.vitality.raceBase, data.vitality.classBase, level),
+          total: vitalityCalculation.total,
           base: data.vitality.raceBase + data.vitality.classBase,
           multiplier: level + 1,
-          levels: calculateVitalityLevels(
-            calculateVitality(data.vitality.raceBase, data.vitality.classBase, level)
-          )
+          levels: vitalityCalculation.levels
         },
 
-        // Berkana
+        // Berkana (já estava correto)
         berkana: {
           total: calculateBerkana(data.berkana.baseValue, level),
           base: data.berkana.baseValue,
@@ -320,14 +242,14 @@ charactersRoutes.get('/:id/calculated', validateParam(z.object({
             data.armor.vitalityCurrent < (data.armor.vitalityTotal * 0.3) ? 'damaged' : 'good'
         },
 
-        // Informações de progressão
+        // Informações de progressão CORRIGIDAS
         progression: {
           currentLevel: level,
-          nextLevel: level + 1,
+          nextLevel: nextLevel,
           xpCurrent: data.basicInfo.currentXp,
-          xpForNext: data.basicInfo.nextLevelXp,
-          xpProgress: data.basicInfo.nextLevelXp > 0
-            ? Math.round((data.basicInfo.currentXp / data.basicInfo.nextLevelXp) * 100)
+          xpForNext: xpForNext, // CORRIGIDO: próximo nível × 10
+          xpProgress: xpForNext > 0
+            ? Math.round((data.basicInfo.currentXp / xpForNext) * 100)
             : 0
         }
       }
@@ -336,7 +258,9 @@ charactersRoutes.get('/:id/calculated', validateParam(z.object({
     logger.info('Calculated character data retrieved', {
       userId,
       characterId: id,
-      level
+      level,
+      totalVitality: vitalityCalculation.total,
+      xpForNext
     });
 
     return responses.success(c, {
@@ -346,6 +270,129 @@ charactersRoutes.get('/:id/calculated', validateParam(z.object({
   } catch (error) {
     logger.error('Failed to get calculated character data', error);
     return responses.error(c, 'Erro ao calcular dados do personagem');
+  }
+});
+
+// ==========================================
+// POST /characters - Criar personagem
+// ==========================================
+charactersRoutes.post('/', validateJSON(CreateRPGCharacterSchema), async (c) => {
+  try {
+    const { userId } = c.get('user');
+    const validatedData = c.req.valid('json');
+
+    // CORRIGIDO: Define nextLevelXp corretamente ao criar
+    const level = validatedData.data.basicInfo.currentLevel;
+    const nextLevel = level + 1;
+    validatedData.data.basicInfo.nextLevelXp = calculateNextLevelXp(nextLevel);
+
+    const newCharacter = await db.insert(characters).values({
+      userId,
+      name: validatedData.name,
+      data: validatedData.data
+    }).returning();
+
+    logger.info('Character created', {
+      userId,
+      characterId: newCharacter[0]?.id,
+      characterName: validatedData.data.basicInfo.characterName
+    });
+
+    return responses.success(c, { character: newCharacter[0] }, 'Personagem criado com sucesso!');
+
+  } catch (error) {
+    logger.error('Failed to create character', error);
+    return responses.error(c, 'Erro interno do servidor');
+  }
+});
+
+// ==========================================
+// PUT /characters/:id - Atualizar personagem
+// ==========================================
+charactersRoutes.put('/:id',
+  validateParam(z.object({
+    id: z.string().regex(/^\d+$/).transform(Number)
+  })),
+  validateJSON(UpdateRPGCharacterSchema),
+  async (c) => {
+    try {
+      const { userId } = c.get('user');
+      const { id } = c.req.valid('param');
+      const updateData = c.req.valid('json');
+
+      // Verifica se o personagem existe e pertence ao usuário
+      const existing = await db.select()
+        .from(characters)
+        .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return responses.notFound(c, 'Personagem');
+      }
+
+      // CORRIGIDO: Atualiza nextLevelXp se o nível mudou
+      if (updateData.data?.basicInfo?.currentLevel) {
+        const newLevel = updateData.data.basicInfo.currentLevel;
+        const nextLevel = newLevel + 1;
+        updateData.data.basicInfo.nextLevelXp = calculateNextLevelXp(nextLevel);
+      }
+
+      // Monta dados para update
+      const updateFields: any = { updatedAt: new Date() };
+      if (updateData.name !== undefined) updateFields.name = updateData.name;
+      if (updateData.data !== undefined) {
+        // Merge com dados existentes
+        const currentData = existing[0]?.data as RPGCharacterData;
+        updateFields.data = { ...currentData, ...updateData.data };
+      }
+
+      const updatedCharacter = await db.update(characters)
+        .set(updateFields)
+        .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+        .returning();
+
+      logger.info('Character updated', { userId, characterId: id });
+
+      return responses.success(c, { character: updatedCharacter[0] }, 'Personagem atualizado!');
+
+    } catch (error) {
+      logger.error('Failed to update character', error);
+      return responses.error(c, 'Erro interno do servidor');
+    }
+  }
+);
+
+// ==========================================
+// DELETE /characters/:id - Deletar personagem
+// ==========================================
+charactersRoutes.delete('/:id', validateParam(z.object({
+  id: z.string().regex(/^\d+$/).transform(Number)
+})), async (c) => {
+  try {
+    const { userId } = c.get('user');
+    const { id } = c.req.valid('param');
+
+    // Verifica se existe
+    const existing = await db.select()
+      .from(characters)
+      .where(and(eq(characters.id, id), eq(characters.userId, userId)))
+      .limit(1);
+
+    if (existing.length === 0) {
+      return responses.notFound(c, 'Personagem');
+    }
+
+    // Deleta
+    await db.delete(characters)
+      .where(and(eq(characters.id, id), eq(characters.userId, userId)));
+
+    logger.info('Character deleted', { userId, characterId: id });
+
+    return responses.success(c, {}, 'Personagem deletado!');
+
+  } catch (error) {
+    logger.error('Failed to delete character', error);
+    return responses.error(c, 'Erro interno do servidor');
   }
 });
 
